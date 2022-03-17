@@ -1,1 +1,1 @@
-web: gunicorn AIEventCompany.wsgi
+web: gunicorn auth.wsgi

@@ -1,13 +1,17 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.exceptions import AuthenticationFailed
-from .serializers import UserSerializer
+from .serializers import UserSerializer, LoginSerializer, AllUserSerializer, ChangePasswordSerializer
 from .models import User
 import jwt, datetime
+from rest_framework.permissions import IsAuthenticated
+from rest_framework import generics
+from django.contrib.auth.hashers import make_password, check_password
 
 
 # Create your views here.
-class RegisterView(APIView):
+class RegisterView(generics.CreateAPIView):
+    serializer_class = UserSerializer
     def post(self, request):
         serializer = UserSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -15,12 +19,14 @@ class RegisterView(APIView):
         return Response(serializer.data)
 
 
-class LoginView(APIView):
+class LoginView(generics.CreateAPIView):
+    serializer_class = LoginSerializer
+    
     def post(self, request):
-        email = request.data['email']
+        username = request.data['username']
         password = request.data['password']
 
-        user = User.objects.filter(email=email).first()
+        user = User.objects.filter(username=username).first()
 
         if user is None:
             raise AuthenticationFailed('User not found!')
@@ -28,39 +34,24 @@ class LoginView(APIView):
         if not user.check_password(password):
             raise AuthenticationFailed('Incorrect password!')
 
-        payload = {
-            'id': user.id,
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=60),
-            'iat': datetime.datetime.utcnow()
-        }
-
-        token = jwt.encode(payload, 'secret', algorithm='HS256').decode('utf-8')
 
         response = Response()
 
-        response.set_cookie(key='jwt', value=token, httponly=True)
         response.data = {
-            'jwt': token
+            'message': "Login Success",
+            'username': user.username,
+            'password': user.password,
+            'name': user.name,
+            'mobile': user.mobile,
+            'user': user.description
+
         }
         return response
 
 
-class UserView(APIView):
-
-    def get(self, request):
-        token = request.COOKIES.get('jwt')
-
-        if not token:
-            raise AuthenticationFailed('Unauthenticated!')
-
-        try:
-            payload = jwt.decode(token, 'secret', algorithm=['HS256'])
-        except jwt.ExpiredSignatureError:
-            raise AuthenticationFailed('Unauthenticated!')
-
-        user = User.objects.filter(id=payload['id']).first()
-        serializer = UserSerializer(user)
-        return Response(serializer.data)
+class UserView(generics.ListAPIView):
+    queryset = User.objects.all()
+    serializer_class = AllUserSerializer
 
 
 class LogoutView(APIView):
@@ -68,6 +59,36 @@ class LogoutView(APIView):
         response = Response()
         response.delete_cookie('jwt')
         response.data = {
-            'message': 'success'
+            'message': 'Logout Success'
         }
         return response
+
+
+class ChangePasswordView(generics.CreateAPIView):
+    serializer_class = ChangePasswordSerializer
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data)
+        
+        username = request.data['username']
+        password = request.data['password']
+        new_password = request.data['new_password']
+
+        user = User.objects.filter(username=username).first()
+        print(user)
+        if user is None:
+            raise AuthenticationFailed('User not found!')
+
+        if not user.check_password(password):
+            raise AuthenticationFailed('Incorrect password!')
+
+
+        user_new_pass = make_password(new_password)
+        user = User.objects.filter(username=username).update(password=user_new_pass)
+        response = Response()
+
+        response.data = {
+            'message': "Password Change Success",
+
+        }
+        return response
+
